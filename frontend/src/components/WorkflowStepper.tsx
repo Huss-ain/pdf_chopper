@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { Box, Stepper, Step, StepLabel, Button, Typography, Card, CardContent, LinearProgress, Alert, Stack, CircularProgress } from '@mui/material';
+import { Box, Stepper, Step, StepLabel, Button, Typography, Card, CardContent, LinearProgress, Alert, Stack, CircularProgress, TextField, Divider } from '@mui/material';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import DownloadIcon from '@mui/icons-material/Download';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import TableChartIcon from '@mui/icons-material/TableChart';
+import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
 import { useWorkflow } from '../state/WorkflowContext';
 import PageNumberIframeViewer from './PageNumberIframeViewer';
 import { useToast } from '../state/ToastContext';
@@ -16,6 +17,13 @@ const WorkflowStepper: React.FC = () => {
   const [activeStep, setActiveStep] = useState(0);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  
+  // Gemini TOC extraction state
+  const [tocStartPage, setTocStartPage] = useState<number>(1);
+  const [tocEndPage, setTocEndPage] = useState<number>(1);
+  const [contentStartPage, setContentStartPage] = useState<number>(1);
+  const [geminiLoading, setGeminiLoading] = useState(false);
+  const [geminiResponse, setGeminiResponse] = useState<any>(null);
 
   useEffect(() => { if (fileId && activeStep === 0) setActiveStep(1); }, [fileId, activeStep]);
   // Removed rawTocs effect
@@ -71,6 +79,47 @@ const WorkflowStepper: React.FC = () => {
     }
   };
 
+  const doGeminiTOCExtraction = async () => {
+    if (!fileId) {
+      setError('No file uploaded');
+      return;
+    }
+
+    setGeminiLoading(true);
+    setError(null);
+    setGeminiResponse(null);
+
+    try {
+      const response = await fetch(`http://localhost:8000/toc/gemini`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          file_id: fileId,
+          toc_start_page: tocStartPage,
+          toc_end_page: tocEndPage,
+          content_start_page: contentStartPage,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail?.message || 'Gemini TOC extraction failed');
+      }
+
+      const result = await response.json();
+      setGeminiResponse(result);
+      success('Gemini TOC extracted successfully');
+    } catch (err: any) {
+      const message = err.message || 'Failed to extract TOC with Gemini';
+      setError(message);
+      toastError(message);
+    } finally {
+      setGeminiLoading(false);
+    }
+  };
+
   const completed = progress?.status === 'completed';
   const failed = progress?.status === 'failed';
   const [notified, setNotified] = useState(false);
@@ -116,10 +165,167 @@ const WorkflowStepper: React.FC = () => {
               </Box>
             )}
             <Typography variant="h6" gutterBottom>Extract Table of Contents</Typography>
-      {!toc && (
+            
+            {/* AI TOC Extraction Section */}
+            <Box sx={{ 
+              mb: 4, 
+              p: 3, 
+              border: '1px solid', 
+              borderColor: 'divider', 
+              borderRadius: 2, 
+              bgcolor: 'background.paper',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+            }}>
+              <Typography variant="h6" sx={{ mb: 2, color: 'text.primary', fontWeight: 600 }}>
+                <AutoFixHighIcon sx={{ mr: 1, verticalAlign: 'middle', color: 'primary.main' }} />
+                AI TOC Extraction
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+                Use AI to extract Table of Contents from specific pages. Enter the page numbers where your TOC is located.
+              </Typography>
+              
+              <Stack direction="row" spacing={2} sx={{ mb: 3 }}>
+                <TextField
+                  label="TOC Start Page"
+                  type="number"
+                  value={tocStartPage}
+                  onChange={(e) => setTocStartPage(Number(e.target.value))}
+                  inputProps={{ min: 1 }}
+                  size="small"
+                  helperText="First page of TOC in PDF"
+                  sx={{
+                    '& .MuiOutlinedInput-root': {
+                      bgcolor: 'background.default',
+                      '&:hover': {
+                        bgcolor: 'background.default',
+                      },
+                      '&.Mui-focused': {
+                        bgcolor: 'background.default',
+                      }
+                    }
+                  }}
+                />
+                <TextField
+                  label="TOC End Page"
+                  type="number"
+                  value={tocEndPage}
+                  onChange={(e) => setTocEndPage(Number(e.target.value))}
+                  inputProps={{ min: 1 }}
+                  size="small"
+                  helperText="Last page of TOC in PDF"
+                  sx={{
+                    '& .MuiOutlinedInput-root': {
+                      bgcolor: 'background.default',
+                      '&:hover': {
+                        bgcolor: 'background.default',
+                      },
+                      '&.Mui-focused': {
+                        bgcolor: 'background.default',
+                      }
+                    }
+                  }}
+                />
+                <TextField
+                  label="Content Start Page"
+                  type="number"
+                  value={contentStartPage}
+                  onChange={(e) => setContentStartPage(Number(e.target.value))}
+                  inputProps={{ min: 1 }}
+                  size="small"
+                  helperText="Page where actual content begins"
+                  sx={{
+                    '& .MuiOutlinedInput-root': {
+                      bgcolor: 'background.default',
+                      '&:hover': {
+                        bgcolor: 'background.default',
+                      },
+                      '&.Mui-focused': {
+                        bgcolor: 'background.default',
+                      }
+                    }
+                  }}
+                />
+              </Stack>
+              
+              {geminiLoading && (
+                <Box sx={{ mb: 2 }}>
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                    Extracting TOC with AI...
+                  </Typography>
+                  <LinearProgress 
+                    sx={{ 
+                      height: 6, 
+                      borderRadius: 3,
+                      bgcolor: 'grey.200',
+                      '& .MuiLinearProgress-bar': {
+                        borderRadius: 3,
+                        bgcolor: 'primary.main'
+                      }
+                    }} 
+                  />
+                </Box>
+              )}
+              
+              <Button
+                startIcon={<AutoFixHighIcon />}
+                variant="contained"
+                onClick={doGeminiTOCExtraction}
+                disabled={!fileId || geminiLoading}
+                sx={{ 
+                  mb: 2,
+                  bgcolor: 'primary.main',
+                  '&:hover': {
+                    bgcolor: 'primary.dark'
+                  }
+                }}
+              >
+                {geminiLoading ? 'Processing...' : 'Extract with AI'}
+              </Button>
+              
+              {geminiResponse && (
+                <Box>
+                  <Divider sx={{ my: 2 }} />
+                  <Typography variant="h6" sx={{ mb: 2, color: 'success.main', fontWeight: 600 }}>
+                    AI Extraction Results
+                  </Typography>
+                  <Box sx={{ 
+                    maxHeight: 400, 
+                    overflowY: 'auto', 
+                    bgcolor: '#1e1e1e',
+                    color: '#e0e0e0',
+                    p: 3, 
+                    borderRadius: 2,
+                    fontFamily: '"Fira Code", "JetBrains Mono", "Monaco", "Consolas", monospace',
+                    fontSize: '0.875rem',
+                    lineHeight: 1.6,
+                    border: '1px solid #333',
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                    '& .MuiScrollBar-thumb': {
+                      bgcolor: '#555'
+                    }
+                  }}>
+                    <pre style={{ 
+                      margin: 0, 
+                      whiteSpace: 'pre-wrap',
+                      color: '#e0e0e0'
+                    }}>
+                      {JSON.stringify(geminiResponse, null, 2)}
+                    </pre>
+                  </Box>
+                  <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                    Raw JSON response from AI model
+                  </Typography>
+                </Box>
+              )}
+            </Box>
+            
+            <Divider sx={{ my: 3 }} />
+            
+            {/* Original TOC Extraction */}
+            {!toc && (
               <Stack spacing={2} direction="column">
-                <Button startIcon={<TableChartIcon />} variant="contained" onClick={() => doFetchTOC()}>Extract TOC</Button>
-        <Typography variant="body2" color="text.secondary">Click Extract TOC to use built-in or automatic fallback.</Typography>
+                <Button startIcon={<TableChartIcon />} variant="outlined" onClick={() => doFetchTOC()}>Extract TOC (Rules-based)</Button>
+                <Typography variant="body2" color="text.secondary">Click Extract TOC to use built-in or automatic fallback.</Typography>
               </Stack>
             )}
             {toc && (
@@ -156,13 +362,36 @@ const WorkflowStepper: React.FC = () => {
             {jobId && (
               <Box>
                 <Typography variant="h6" gutterBottom>Splitting Sections</Typography>
-                <LinearProgress
-                  sx={{ my: 3 }}
-                  variant={typeof progress?.progress === 'number' ? 'determinate' : 'indeterminate'}
-                  value={typeof progress?.progress === 'number' ? progress!.progress : undefined}
-                />
-                <Typography variant="body2">Job ID: {jobId}</Typography>
-                {progress?.status && <Typography variant="body2" sx={{ mt: 1 }}>Status: {progress.status}{typeof progress?.progress === 'number' ? ` (${progress.progress}%)` : ''}</Typography>}
+                <Box sx={{ mt: 3, mb: 2 }}>
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                    {progress?.status === 'in_progress' && 'Processing PDF sections...'}
+                    {progress?.status === 'completed' && 'Split completed successfully!'}
+                    {progress?.status === 'failed' && 'Split failed'}
+                    {!progress?.status && 'Initializing...'}
+                  </Typography>
+                  <LinearProgress
+                    sx={{ 
+                      height: 8, 
+                      borderRadius: 4,
+                      bgcolor: 'grey.200',
+                      '& .MuiLinearProgress-bar': {
+                        borderRadius: 4,
+                        bgcolor: progress?.status === 'failed' ? 'error.main' : 
+                                progress?.status === 'completed' ? 'success.main' : 'primary.main'
+                      }
+                    }}
+                    variant={typeof progress?.progress === 'number' ? 'determinate' : 'indeterminate'}
+                    value={typeof progress?.progress === 'number' ? progress!.progress : undefined}
+                  />
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 1 }}>
+                    <Typography variant="caption" color="text.secondary">
+                      Job ID: {jobId.substring(0, 8)}...
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {typeof progress?.progress === 'number' ? `${progress.progress}%` : '...'}
+                    </Typography>
+                  </Box>
+                </Box>
                 {progress?.status === 'failed' && (
                   <Stack direction="row" spacing={2} justifyContent="center" sx={{ mt: 2 }}>
                     <Button size="small" variant="contained" onClick={doSplit}>Retry</Button>
@@ -174,7 +403,18 @@ const WorkflowStepper: React.FC = () => {
             {!jobId && !error && (
               <>
                 <Typography variant="body2">Preparing split…</Typography>
-                <LinearProgress sx={{ my: 3 }} />
+                <LinearProgress 
+                  sx={{ 
+                    my: 3, 
+                    height: 6, 
+                    borderRadius: 3,
+                    bgcolor: 'grey.200',
+                    '& .MuiLinearProgress-bar': {
+                      borderRadius: 3,
+                      bgcolor: 'primary.main'
+                    }
+                  }} 
+                />
                 <Stack direction="row" spacing={2} justifyContent="center" sx={{ mt: 2 }}>
                   <Button size="small" variant="outlined" onClick={doSplit} disabled={!toc}>Retry</Button>
                   <Button size="small" onClick={() => setActiveStep(1)}>Back to TOC</Button>

@@ -1,0 +1,8 @@
+What we are building
+This app is a pdf breakdown app designed to be an education content pipeline. Breaks down the pdf into its subchapter pdfs with additional context as to where it starts and where it finishes organised into chapter folders. These output pdfs will be used by another llm powered app, so they need to be absolutely accurate with no mistakes. 
+
+We have so far used a rules based method, however this does not capture content accurately. It does great splitting and organising the folder but the actual content has regular inaccuracies. 
+
+We want to try a different approach using gemini llm. We want to start with a basic method that feeds toc of the content images to the gemini model with a prompt asking it to return a json of the contents page with correct and consistent nesting. The prompt should address variations in book structures but not be too complex. The prompt should be a seperate file and imported to the code.
+
+In order to get the toc pages, we need an interface change on the frontend. There is always a offset between pdf file page numbers and pdf content numbers due to preamble and publishing pages and contents page. So when the pdf is uploaded and the preview of it is visibile on the frontend, an modern input box should ask for what page the pdf the first page of the contents actually start from e.g page 14 of the pdf. There should also be a modern input box that asks for the first and last pages of the pdf file where the TOC is located. This will allow us to know what to pass to the gemini model for extraction. 

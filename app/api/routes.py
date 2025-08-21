@@ -7,9 +7,11 @@ import sys
 from fastapi.middleware.cors import CORSMiddleware
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 from core.toc_extractor import TOCExtractor
+from core.gemini_toc_extractor import GeminiTOCExtractor
 from core.splitter import PDFSplitter
 from core.file_organizer import archive_output, sanitize_filename
 import time
+# Correct PyMuPDF import (library installs as 'fitz')
 import fitz
 
 app = FastAPI(title="PDF Book Breakdown API")
@@ -45,26 +47,83 @@ def upload_pdf(file: UploadFile = File(...)):
 @app.get("/toc")
 def get_toc(file_id: str):
     """
-    Extract and return all TOC structures for a given uploaded PDF.
-    Returns built-in, text-based, and merged TOCs.
+    Extract and return TOC structure using rules-based method.
+    Returns built-in PDF bookmarks or fallback single-chapter structure.
     """
     file_path = UPLOAD_DIR / f"{file_id}.pdf"
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="PDF file not found")
+    
     try:
         extractor = TOCExtractor(str(file_path))
-        built_in = extractor.extract_built_in()
-        if built_in and built_in.get('chapters'):
-            return { 'toc': built_in, 'source': 'built_in' }
-        # fallback single chapter
-        try:
-            with fitz.open(str(file_path)) as d:
-                fallback = { 'chapters': [ { 'title': 'Document', 'number': '1', 'page': 1, 'subtopics': [], 'end_page': d.page_count } ] }
-        except Exception:
-            fallback = { 'chapters': [ { 'title': 'Document', 'number': '1', 'page': 1, 'subtopics': [] } ] }
-        return { 'toc': fallback, 'source': 'fallback' }
+        toc_data = extractor.extract()
+        
+        if not toc_data or not toc_data.get('chapters'):
+            # If extraction fails, return a basic fallback
+            return {
+                'toc': {
+                    'chapters': [
+                        {
+                            'title': 'Document', 
+                            'number': '1', 
+                            'page': 1, 
+                            'subtopics': [], 
+                            'end_page': 1
+                        }
+                    ]
+                }, 
+                'source': 'fallback'
+            }
+        
+        return {
+            'toc': toc_data,
+            'source': 'rules_based'
+        }
     except Exception as e:
-        raise HTTPException(status_code=500, detail={"error": "TOC extraction error", "message": str(e)})
+        raise HTTPException(status_code=500, detail=f"Rules-based TOC extraction failed: {str(e)}")
+
+@app.post("/toc/gemini")
+def extract_toc_with_gemini(request: dict = Body(...)):
+    """Extract TOC pages with Gemini and return raw JSON + structured toc.
+
+    Frontend expects an unmodified JSON so we pass through both the parsed structure
+    (under 'toc') and the original cleaned response text for inspection.
+    """
+    # Extract values from request body
+    file_id = request.get("file_id")
+    toc_start_page = request.get("toc_start_page")
+    toc_end_page = request.get("toc_end_page") 
+    content_start_page = request.get("content_start_page", 1)
+    
+    if not file_id:
+        raise HTTPException(status_code=400, detail="file_id is required")
+    if toc_start_page is None:
+        raise HTTPException(status_code=400, detail="toc_start_page is required")
+    if toc_end_page is None:
+        raise HTTPException(status_code=400, detail="toc_end_page is required")
+    
+    file_path = UPLOAD_DIR / f"{file_id}.pdf"
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="PDF file not found")
+
+    try:
+        gemini_extractor = GeminiTOCExtractor(str(file_path))
+        result = gemini_extractor.extract(toc_start_page, toc_end_page, content_start_page)
+        if not result or not result.get("toc"):
+            raise HTTPException(status_code=500, detail="Failed to extract TOC with Gemini")
+        return {
+            **result,
+            "source": "gemini",
+            "pages_processed": f"{toc_start_page}-{toc_end_page}",
+            "content_start_page": content_start_page,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={
+            "error": "Gemini TOC extraction error",
+            "message": str(e)
+        })
 
 @app.post("/toc/edit")
 def edit_toc(file_id: str, toc: dict):

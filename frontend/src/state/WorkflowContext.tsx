@@ -51,7 +51,9 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       throw new Error(message);
     }
   }, [fileId]);
-  const selectTOC = useCallback((_k: any) => {}, []);
+  const selectTOC = useCallback((_k: any) => {
+    // Legacy function - kept for interface compatibility but not used
+  }, []);
 
   const saveEditedTOC = useCallback(async (next: TOCStructure) => {
     if (!fileId || !next) return;
@@ -75,7 +77,6 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const reset = () => {
     setFile(undefined);
     setFileId(undefined);
-  setTOC(null);
     setTOC(null);
     setJobId(undefined);
     setProgress(null);

@@ -1,7 +1,7 @@
 import logging
 from pathlib import Path
 from typing import Dict, Any
-import fitz
+import pymupdf as fitz
 from .pdf_loader import EnhancedPDFLoader
 
 logger = logging.getLogger(__name__)
