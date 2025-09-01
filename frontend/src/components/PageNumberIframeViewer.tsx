@@ -8,14 +8,41 @@ import workerSrc from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 // Align worker version
 (GlobalWorkerOptions as any).workerSrc = workerSrc;
 
-interface ViewerProps { file?: File; fileId?: string; height?: number }
+interface ViewerProps { 
+  file?: File; 
+  fileId?: string; 
+  height?: number;
+  previewStartPage?: number;
+  previewEndPage?: number;
+  onPreviewExit?: () => void;
+}
 
-const PageNumberIframeViewer: React.FC<ViewerProps> = ({ file, fileId, height }) => {
+const PageNumberIframeViewer: React.FC<ViewerProps> = ({ 
+  file, 
+  fileId, 
+  height, 
+  previewStartPage, 
+  previewEndPage, 
+  onPreviewExit 
+}) => {
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [pages, setPages] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [canvasUrl, setCanvasUrl] = useState<string | null>(null);
+
+  // Preview mode state
+  const isPreviewMode = previewStartPage != null && previewEndPage != null;
+  const effectiveStartPage = isPreviewMode ? previewStartPage : 1;
+  const effectiveEndPage = isPreviewMode ? previewEndPage : (pages || 1);
+  const effectiveTotalPages = effectiveEndPage - effectiveStartPage + 1;
+
+  // Initialize page to preview start when entering preview mode
+  useEffect(() => {
+    if (isPreviewMode && previewStartPage) {
+      setPage(previewStartPage);
+    }
+  }, [isPreviewMode, previewStartPage]);
 
   // Fetch page count (server for uploaded file, client parse for local file)
   useEffect(() => {
@@ -97,26 +124,84 @@ const PageNumberIframeViewer: React.FC<ViewerProps> = ({ file, fileId, height })
 
   const changePage = (delta: number) => {
     setPage(p => {
-      if (!pages) return Math.max(1, p + delta);
       let next = p + delta;
-      if (next < 1) next = 1;
-      if (next > pages) next = pages;
+      
+      // Respect preview range if active
+      if (isPreviewMode) {
+        if (next < effectiveStartPage) next = effectiveStartPage;
+        if (next > effectiveEndPage) next = effectiveEndPage;
+      } else {
+        // Normal mode
+        if (next < 1) next = 1;
+        if (pages && next > pages) next = pages;
+      }
+      
       return next;
     });
   };
 
   const onManualPage = (v: string) => {
     const n = parseInt(v, 10);
-    if (!isNaN(n) && n >= 1 && (!pages || n <= pages)) setPage(n);
+    if (isNaN(n)) return;
+    
+    // Respect preview range if active
+    if (isPreviewMode) {
+      if (n >= effectiveStartPage && n <= effectiveEndPage) {
+        setPage(n);
+      }
+    } else {
+      // Normal mode
+      if (n >= 1 && (!pages || n <= pages)) {
+        setPage(n);
+      }
+    }
   };
 
   return (
     <Box>
+      {isPreviewMode && onPreviewExit && (
+        <Stack direction="row" alignItems="center" spacing={2} sx={{ mb: 1, p: 1, bgcolor: 'primary.light', color: 'primary.contrastText', borderRadius: 1 }}>
+          <Typography variant="body2" sx={{ flex: 1 }}>
+            Preview Mode: Pages {previewStartPage}-{previewEndPage}
+          </Typography>
+          <IconButton size="small" onClick={onPreviewExit} sx={{ color: 'inherit' }}>
+            <Typography variant="caption">Exit</Typography>
+          </IconButton>
+        </Stack>
+      )}
       <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1, flexWrap: 'wrap' }}>
-        <Tooltip title="Previous Page"><span><IconButton size="small" onClick={() => changePage(-1)} disabled={page <= 1}><NavigateBeforeIcon fontSize="small" /></IconButton></span></Tooltip>
-        <Tooltip title="Next Page"><span><IconButton size="small" onClick={() => changePage(1)} disabled={!!pages && page >= (pages || 0)}><NavigateNextIcon fontSize="small" /></IconButton></span></Tooltip>
-  <TextField size="small" value={page} onChange={e => onManualPage(e.target.value)} inputProps={{ style: { width: 60, textAlign: 'center' } }} />
-  <Typography variant="body2">of {pages !== null && pages !== undefined ? pages : '…'} pages</Typography>
+        <Tooltip title="Previous Page">
+          <span>
+            <IconButton 
+              size="small" 
+              onClick={() => changePage(-1)} 
+              disabled={isPreviewMode ? page <= effectiveStartPage : page <= 1}
+            >
+              <NavigateBeforeIcon fontSize="small" />
+            </IconButton>
+          </span>
+        </Tooltip>
+        <Tooltip title="Next Page">
+          <span>
+            <IconButton 
+              size="small" 
+              onClick={() => changePage(1)} 
+              disabled={isPreviewMode ? page >= effectiveEndPage : (!!pages && page >= (pages || 0))}
+            >
+              <NavigateNextIcon fontSize="small" />
+            </IconButton>
+          </span>
+        </Tooltip>
+        <TextField 
+          size="small" 
+          value={page} 
+          onChange={e => onManualPage(e.target.value)} 
+          inputProps={{ style: { width: 60, textAlign: 'center' } }} 
+        />
+        <Typography variant="body2">
+          of {isPreviewMode ? effectiveTotalPages : (pages !== null && pages !== undefined ? pages : '…')} pages
+          {isPreviewMode && ` (${previewStartPage}-${previewEndPage})`}
+        </Typography>
         {error && !/Unexpected server response \(0\)/.test(error) && (
           <Typography color="error" variant="caption" sx={{ ml: 2 }}>{error}</Typography>
         )}

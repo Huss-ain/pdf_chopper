@@ -5,14 +5,16 @@ import DownloadIcon from '@mui/icons-material/Download';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import TableChartIcon from '@mui/icons-material/TableChart';
 import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
+import EditIcon from '@mui/icons-material/Edit';
 import { useWorkflow } from '../state/WorkflowContext';
 import PageNumberIframeViewer from './PageNumberIframeViewer';
+import ManualTOCEditor from './ManualTOCEditor';
 import { useToast } from '../state/ToastContext';
 
 const steps = ['Upload', 'TOC', 'Split', 'Download']; // labels unchanged; behavior adjusted
 
 const WorkflowStepper: React.FC = () => {
-  const { file, setFile, uploadFile, fileId, fetchTOC, startSplit, jobId, pollProgress, progress, toc } = useWorkflow();
+  const { file, setFile, uploadFile, fileId, fetchTOC, startSplit, jobId, pollProgress, progress, toc, tocMode, setTOCMode, manualTOC, convertManualTOCToStandard } = useWorkflow();
   const { success, error: toastError, info, warning } = useToast();
   const [activeStep, setActiveStep] = useState(0);
   const [uploading, setUploading] = useState(false);
@@ -69,6 +71,13 @@ const WorkflowStepper: React.FC = () => {
   const doSplit = async () => {
     setError(null);
     try {
+      // If we're using manual TOC mode and have manual TOC data, convert it first
+      if (tocMode === 'manual' && manualTOC && !toc) {
+        convertManualTOCToStandard();
+        // Give a brief moment for state to update
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      
       await startSplit();
       // Move user into the Split step immediately to show progress
       setActiveStep(2);
@@ -321,6 +330,53 @@ const WorkflowStepper: React.FC = () => {
             
             <Divider sx={{ my: 3 }} />
             
+            {/* Manual TOC Creation Section */}
+            {tocMode === 'manual' ? (
+              <ManualTOCEditor />
+            ) : (
+              <Box sx={{ 
+                mb: 4, 
+                p: 3, 
+                border: '1px solid', 
+                borderColor: 'divider', 
+                borderRadius: 2, 
+                bgcolor: 'background.paper',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+              }}>
+                <Typography variant="h6" sx={{ mb: 2, color: 'text.primary', fontWeight: 600 }}>
+                  <EditIcon sx={{ mr: 1, verticalAlign: 'middle', color: 'secondary.main' }} />
+                  Manual TOC Creation
+                </Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+                  Create your table of contents manually with full control over chapter structure and page ranges. 
+                  Perfect for scanned books or complex documents.
+                </Typography>
+                
+                <Button
+                  startIcon={<EditIcon />}
+                  variant="contained"
+                  color="secondary"
+                  onClick={() => setTOCMode('manual')}
+                  disabled={!fileId}
+                  sx={{ 
+                    mb: 2,
+                    bgcolor: 'secondary.main',
+                    '&:hover': {
+                      bgcolor: 'secondary.dark'
+                    }
+                  }}
+                >
+                  Create Manual TOC
+                </Button>
+                
+                <Typography variant="caption" color="text.secondary" display="block">
+                  Switch to manual mode to define chapters, subchapters, and page ranges yourself.
+                </Typography>
+              </Box>
+            )}
+            
+            <Divider sx={{ my: 3 }} />
+            
             {/* Original TOC Extraction */}
             {!toc && (
               <Stack spacing={2} direction="column">
@@ -345,12 +401,26 @@ const WorkflowStepper: React.FC = () => {
                       </Box>
                     );
                   })}
-                  {(!toc || toc.chapters?.length === 0) && (
+                  {(!toc || toc.chapters?.length === 0) && tocMode !== 'manual' && (
                     <Typography variant="body2" color="text.secondary">No TOC chapters. Create a simple TOC to proceed.</Typography>
+                  )}
+                  {tocMode === 'manual' && (!manualTOC || manualTOC.structure.length === 0) && (
+                    <Typography variant="body2" color="text.secondary">No manual TOC created yet. Use the manual TOC editor above to create chapters.</Typography>
                   )}
                 </Box>
                 <Stack direction="row" spacing={2} sx={{ mt: 2 }}>
-                  <Button startIcon={<PlayArrowIcon />} variant="contained" disabled={!toc || toc.chapters?.length === 0} onClick={doSplit}>Start Split</Button>
+                  <Button 
+                    startIcon={<PlayArrowIcon />} 
+                    variant="contained" 
+                    disabled={
+                      tocMode === 'manual' 
+                        ? (!manualTOC || manualTOC.structure.length === 0)
+                        : (!toc || toc.chapters?.length === 0)
+                    } 
+                    onClick={doSplit}
+                  >
+                    Start Split
+                  </Button>
                 </Stack>
               </Box>
             )}
@@ -416,7 +486,18 @@ const WorkflowStepper: React.FC = () => {
                   }} 
                 />
                 <Stack direction="row" spacing={2} justifyContent="center" sx={{ mt: 2 }}>
-                  <Button size="small" variant="outlined" onClick={doSplit} disabled={!toc}>Retry</Button>
+                  <Button 
+                    size="small" 
+                    variant="outlined" 
+                    onClick={doSplit} 
+                    disabled={
+                      tocMode === 'manual' 
+                        ? (!manualTOC || manualTOC.structure.length === 0)
+                        : !toc
+                    }
+                  >
+                    Retry
+                  </Button>
                   <Button size="small" onClick={() => setActiveStep(1)}>Back to TOC</Button>
                 </Stack>
               </>
@@ -425,7 +506,18 @@ const WorkflowStepper: React.FC = () => {
               <>
                 <Typography variant="body2" color="error">Split not started.</Typography>
                 <Stack direction="row" spacing={2} justifyContent="center" sx={{ mt: 2 }}>
-                  <Button size="small" variant="contained" onClick={doSplit} disabled={!toc}>Retry Split</Button>
+                  <Button 
+                    size="small" 
+                    variant="contained" 
+                    onClick={doSplit} 
+                    disabled={
+                      tocMode === 'manual' 
+                        ? (!manualTOC || manualTOC.structure.length === 0)
+                        : !toc
+                    }
+                  >
+                    Retry Split
+                  </Button>
                   <Button size="small" variant="outlined" onClick={() => { setActiveStep(1); }}>Define TOC</Button>
                 </Stack>
               </>
